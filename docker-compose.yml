@@ -1,0 +1,10 @@
+# Local ParaBank for automation. Start: docker compose up -d
+# UI: http://localhost:8080/parabank/index.htm
+# API: http://localhost:8080/parabank/services/bank/openapi.json
+services:
+  parabank:
+    image: parasoft/parabank:latest
+    container_name: parabank
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

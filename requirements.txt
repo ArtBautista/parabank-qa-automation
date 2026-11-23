@@ -1,0 +1,8 @@
+selenium>=4.21
+pytest>=8.2
+pytest-html>=4.1
+requests>=2.32
+ruff>=0.6
+robotframework>=7.0
+robotframework-seleniumlibrary>=6.5
+robotframework-requests>=0.9.7

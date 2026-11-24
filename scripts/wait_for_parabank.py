@@ -27,7 +27,7 @@ def main():
     else:
         print(f"ParaBank did not answer within {args.timeout} s at {url}")
         return 1
-    
+
     if IS_LOCAL and not args.no_reset:
         requests.post(f"{API_URL}/initializeDB", timeout=30).raise_for_status()
         print("Database reset to default data")

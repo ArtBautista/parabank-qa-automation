@@ -1,0 +1,854 @@
+{
+  "info": {
+    "_postman_id": "41bb0366-2a58-482d-a9f8-8dc6827fb9a0",
+    "name": "ParaBank REST API",
+    "description": "Functional, schema, chaining, data-driven and negative tests for the ParaBank REST (JSON) API. Run folders in order: 01 sets customerId, 03 sets account ids.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 Auth",
+      "item": [
+        {
+          "name": "Login - valid credentials",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-001 status is 200\", () => pm.response.to.have.status(200));",
+                  "const customer = pm.response.json();",
+                  "pm.test(\"PB-API-001 returns the customer id and name\", () => {",
+                  "  pm.expect(customer.id).to.be.a(\"number\");",
+                  "  pm.expect(customer.firstName).to.be.a(\"string\").and.not.empty;",
+                  "});",
+                  "pm.test(\"PB-API-001 responds in under 2 s\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "pm.environment.set(\"customerId\", customer.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/login/{{username}}/{{password}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login",
+                "{{username}}",
+                "{{password}}"
+              ]
+            },
+            "description": "Logs in and saves customerId for every later request."
+          }
+        },
+        {
+          "name": "Login - wrong password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-002 wrong password is rejected with a 4xx\", () => {",
+                  "  pm.expect(pm.response.code).to.be.within(400, 499);",
+                  "});",
+                  "pm.test(\"PB-API-002 no customer data is returned\", () => {",
+                  "  pm.expect(pm.response.text()).to.not.include(\"firstName\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/login/{{username}}/wrong-password-123",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login",
+                "{{username}}",
+                "wrong-password-123"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Customer",
+      "item": [
+        {
+          "name": "Get customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-010 status is 200\", () => pm.response.to.have.status(200));",
+                  "const schema = {",
+                  "  type: \"object\",",
+                  "  required: [\"id\", \"firstName\", \"lastName\", \"address\", \"phoneNumber\"],",
+                  "  properties: {",
+                  "    id: { type: \"integer\" },",
+                  "    firstName: { type: \"string\" },",
+                  "    lastName: { type: \"string\" },",
+                  "    address: { type: \"object\", required: [\"street\", \"city\", \"state\", \"zipCode\"] },",
+                  "    phoneNumber: { type: \"string\" }",
+                  "  }",
+                  "};",
+                  "pm.test(\"PB-API-010 matches the Customer schema\", () => pm.response.to.have.jsonSchema(schema));",
+                  "pm.test(\"PB-API-010 id matches the logged-in customer\", () => {",
+                  "  pm.expect(pm.response.json().id).to.eql(Number(pm.environment.get(\"customerId\")));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get unknown customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-011 unknown customer returns 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"PB-API-011 error names the missing customer\", () => {",
+                  "  pm.expect(pm.response.text()).to.include(\"Could not find customer #999999999\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "999999999"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Accounts",
+      "item": [
+        {
+          "name": "Get customer accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const accountSchema = {",
+                  "  type: \"object\",",
+                  "  required: [\"id\", \"customerId\", \"type\", \"balance\"],",
+                  "  properties: {",
+                  "    id: { type: \"integer\" },",
+                  "    customerId: { type: \"integer\" },",
+                  "    type: { type: \"string\", enum: [\"CHECKING\", \"SAVINGS\", \"LOAN\"] },",
+                  "    balance: { type: \"number\" }",
+                  "  }",
+                  "};",
+                  "pm.test(\"PB-API-020 status is 200\", () => pm.response.to.have.status(200));",
+                  "const accounts = pm.response.json();",
+                  "pm.test(\"PB-API-020 customer has at least two accounts\", () => {",
+                  "  pm.expect(accounts).to.be.an(\"array\").with.lengthOf.at.least(2);",
+                  "});",
+                  "pm.test(\"PB-API-020 every account matches the Account schema\", () => {",
+                  "  pm.response.to.have.jsonSchema({ type: \"array\", items: accountSchema });",
+                  "});",
+                  "pm.test(\"PB-API-020 every account belongs to this customer\", () => {",
+                  "  const id = Number(pm.environment.get(\"customerId\"));",
+                  "  accounts.forEach(a => pm.expect(a.customerId).to.eql(id));",
+                  "});",
+                  "pm.environment.set(\"fromAccountId\", accounts[0].id);",
+                  "pm.environment.set(\"toAccountId\", accounts[1].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}",
+                "accounts"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get account by id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const accountSchema = {",
+                  "  type: \"object\",",
+                  "  required: [\"id\", \"customerId\", \"type\", \"balance\"],",
+                  "  properties: {",
+                  "    id: { type: \"integer\" },",
+                  "    customerId: { type: \"integer\" },",
+                  "    type: { type: \"string\", enum: [\"CHECKING\", \"SAVINGS\", \"LOAN\"] },",
+                  "    balance: { type: \"number\" }",
+                  "  }",
+                  "};",
+                  "pm.test(\"PB-API-021 status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"PB-API-021 matches the Account schema\", () => pm.response.to.have.jsonSchema(accountSchema));",
+                  "pm.test(\"PB-API-021 returns the requested account\", () => {",
+                  "  pm.expect(pm.response.json().id).to.eql(Number(pm.environment.get(\"fromAccountId\")));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fromAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fromAccountId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Create savings account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const accountSchema = {",
+                  "  type: \"object\",",
+                  "  required: [\"id\", \"customerId\", \"type\", \"balance\"],",
+                  "  properties: {",
+                  "    id: { type: \"integer\" },",
+                  "    customerId: { type: \"integer\" },",
+                  "    type: { type: \"string\", enum: [\"CHECKING\", \"SAVINGS\", \"LOAN\"] },",
+                  "    balance: { type: \"number\" }",
+                  "  }",
+                  "};",
+                  "pm.test(\"PB-API-022 status is 200\", () => pm.response.to.have.status(200));",
+                  "const account = pm.response.json();",
+                  "pm.test(\"PB-API-022 new account is SAVINGS and matches the schema\", () => {",
+                  "  pm.response.to.have.jsonSchema(accountSchema);",
+                  "  pm.expect(account.type).to.eql(\"SAVINGS\");",
+                  "});",
+                  "pm.environment.set(\"newAccountId\", account.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/createAccount?customerId={{customerId}}&newAccountType=1&fromAccountId={{fromAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "createAccount"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "{{customerId}}"
+                },
+                {
+                  "key": "newAccountType",
+                  "value": "1"
+                },
+                {
+                  "key": "fromAccountId",
+                  "value": "{{fromAccountId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get new account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-023 the new account can be read back\", () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().id).to.eql(Number(pm.environment.get(\"newAccountId\")));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{newAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{newAccountId}}"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Transfer flow",
+      "item": [
+        {
+          "name": "Balance before transfer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-030 status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"balanceBefore\", pm.response.json().balance);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fromAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fromAccountId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Transfer funds",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Data-driven runs pass transferAmount from postman/transfer-data.csv.",
+                  "const amount = pm.iterationData.get(\"transferAmount\") || pm.environment.get(\"transferAmount\") || \"10\";",
+                  "pm.environment.set(\"transferAmount\", amount);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-031 transfer returns 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"PB-API-031 confirmation mentions both accounts\", () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include(pm.environment.get(\"fromAccountId\"));",
+                  "  pm.expect(text).to.include(pm.environment.get(\"toAccountId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfer?fromAccountId={{fromAccountId}}&toAccountId={{toAccountId}}&amount={{transferAmount}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfer"
+              ],
+              "query": [
+                {
+                  "key": "fromAccountId",
+                  "value": "{{fromAccountId}}"
+                },
+                {
+                  "key": "toAccountId",
+                  "value": "{{toAccountId}}"
+                },
+                {
+                  "key": "amount",
+                  "value": "{{transferAmount}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Balance after transfer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const before = Number(pm.environment.get(\"balanceBefore\"));",
+                  "const amount = Number(pm.environment.get(\"transferAmount\"));",
+                  "const after = pm.response.json().balance;",
+                  "pm.test(\"PB-API-032 balance dropped by exactly the transferred amount\", () => {",
+                  "  pm.expect(Math.round(after * 100)).to.eql(Math.round((before - amount) * 100));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fromAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fromAccountId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Transactions include the transfer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-033 status is 200\", () => pm.response.to.have.status(200));",
+                  "const amount = Number(pm.environment.get(\"transferAmount\"));",
+                  "const transactions = pm.response.json();",
+                  "pm.test(\"PB-API-033 a debit for the transferred amount exists\", () => {",
+                  "  const found = transactions.some(t => t.type === \"Debit\" && Math.round(t.amount * 100) === Math.round(amount * 100));",
+                  "  pm.expect(found).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{fromAccountId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "{{fromAccountId}}",
+                "transactions"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Loans",
+      "item": [
+        {
+          "name": "Request small loan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-040 status is 200\", () => pm.response.to.have.status(200));",
+                  "const loan = pm.response.json();",
+                  "pm.test(\"PB-API-040 small loan is approved with a new account\", () => {",
+                  "  pm.expect(loan.approved).to.be.true;",
+                  "  pm.expect(loan.accountId).to.be.a(\"number\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/requestLoan?customerId={{customerId}}&amount=100&downPayment=10&fromAccountId={{fromAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "requestLoan"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "{{customerId}}"
+                },
+                {
+                  "key": "amount",
+                  "value": "100"
+                },
+                {
+                  "key": "downPayment",
+                  "value": "10"
+                },
+                {
+                  "key": "fromAccountId",
+                  "value": "{{fromAccountId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Request huge loan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-041 status is 200\", () => pm.response.to.have.status(200));",
+                  "const loan = pm.response.json();",
+                  "pm.test(\"PB-API-041 huge loan is denied with a reason\", () => {",
+                  "  pm.expect(loan.approved).to.be.false;",
+                  "  pm.expect(loan.message).to.be.a(\"string\").and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/requestLoan?customerId={{customerId}}&amount=99999999&downPayment=10&fromAccountId={{fromAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "requestLoan"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "{{customerId}}"
+                },
+                {
+                  "key": "amount",
+                  "value": "99999999"
+                },
+                {
+                  "key": "downPayment",
+                  "value": "10"
+                },
+                {
+                  "key": "fromAccountId",
+                  "value": "{{fromAccountId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Negative",
+      "item": [
+        {
+          "name": "Transfer from unknown account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-050 unknown source account is rejected with a 4xx\", () => {",
+                  "  pm.expect(pm.response.code).to.be.within(400, 499);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfer?fromAccountId=999999999&toAccountId={{toAccountId}}&amount=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfer"
+              ],
+              "query": [
+                {
+                  "key": "fromAccountId",
+                  "value": "999999999"
+                },
+                {
+                  "key": "toAccountId",
+                  "value": "{{toAccountId}}"
+                },
+                {
+                  "key": "amount",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Transfer without amount",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// DEF-002: ParaBank returns 500 instead of a 400 validation error when amount is missing.",
+                  "// Expected behaviour stays documented but skipped; the second test fails once the bug is fixed,",
+                  "// which is the signal to remove .skip (same idea as pytest xfail(strict=True)).",
+                  "pm.test.skip(\"PB-API-051 missing amount is rejected with a 4xx [DEF-002]\", () => {",
+                  "  pm.expect(pm.response.code).to.be.within(400, 499);",
+                  "});",
+                  "pm.test(\"PB-API-051 known defect DEF-002 still reproduces (HTTP 500)\", () => {",
+                  "  pm.expect(pm.response.code, \"DEF-002 looks fixed: remove the skip above\").to.eql(500);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfer?fromAccountId={{fromAccountId}}&toAccountId={{toAccountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfer"
+              ],
+              "query": [
+                {
+                  "key": "fromAccountId",
+                  "value": "{{fromAccountId}}"
+                },
+                {
+                  "key": "toAccountId",
+                  "value": "{{toAccountId}}"
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get unknown account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PB-API-052 unknown account returns 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "999999999"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const KNOWN_DEFECTS = [\"Transfer without amount\"]; // DEF-002",
+          "if (KNOWN_DEFECTS.includes(pm.info.requestName)) {",
+          "  pm.test.skip(\"Response is not a server error [known defect DEF-002]\", () => {});",
+          "} else {",
+          "  pm.test(\"Response is not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+          "}"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+# GitLab CI version of the QA pipeline.
+# To use it, copy this file to the repository root as .gitlab-ci.yml.
+# ParaBank runs as a service container reachable at http://parabank:8080.
+
+stages:
+  - lint
+  - api
+  - ui
+
+variables:
+  PARABANK_URL: "http://parabank:8080/parabank"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+.parabank:
+  services:
+    - name: parasoft/parabank:latest
+      alias: parabank
+
+.python_browser:
+  extends: .parabank
+  image: python:3.11-bookworm
+  variables:
+    CHROME_BINARY: /usr/bin/chromium
+    CHROMEDRIVER_PATH: /usr/bin/chromedriver
+  cache:
+    key: pip
+    paths: [.cache/pip]
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends chromium chromium-driver
+    - pip install -r requirements.txt
+    # Fresh service container = default data, so no reset is needed.
+    - python scripts/wait_for_parabank.py --timeout 240 --no-reset
+
+lint:
+  stage: lint
+  image: python:3.11-slim
+  script:
+    - pip install ruff
+    - ruff check .
+
+api_tests:
+  stage: api
+  extends: .parabank
+  image: node:20
+  script:
+    - npm install -g newman newman-reporter-htmlextra
+    # Wait until ParaBank answers (up to 4 minutes).
+    - |
+      for i in $(seq 1 48); do
+        curl -sf "$PARABANK_URL/services/bank/customers/12212" -o /dev/null && break
+        echo "Waiting for ParaBank... ($i)"; sleep 5
+      done
+    - >
+      newman run postman/ParaBank.postman_collection.json
+      -e postman/local.postman_environment.json
+      --env-var "baseUrl=$PARABANK_URL/services/bank"
+      -r cli,htmlextra,junit
+      --reporter-htmlextra-export reports/newman-report.html
+      --reporter-junit-export reports/newman-junit.xml
+    - >
+      newman run postman/ParaBank.postman_collection.json
+      -e postman/local.postman_environment.json
+      --env-var "baseUrl=$PARABANK_URL/services/bank"
+      --folder "01 Auth" --folder "03 Accounts" --folder "04 Transfer flow"
+      -d postman/transfer-data.csv -r cli
+  artifacts:
+    when: always
+    paths: [reports/]
+    reports:
+      junit: reports/newman-junit.xml
+
+pytest_ui:
+  stage: ui
+  extends: .python_browser
+  script:
+    - >
+      python -m pytest --browser chrome --headless
+      --junitxml=reports/pytest-junit.xml
+      --html=reports/pytest.html --self-contained-html
+  artifacts:
+    when: always
+    paths: [reports/]
+    reports:
+      junit: reports/pytest-junit.xml
+
+robot_tests:
+  stage: ui
+  extends: .python_browser
+  script:
+    - >
+      robot --outputdir reports/robot
+      --variable BROWSER:headlesschrome
+      --variable BASE_URL:$PARABANK_URL
+      --variable 'BROWSER_OPTIONS:add_argument("--no-sandbox");add_argument("--disable-dev-shm-usage");binary_location="/usr/bin/chromium"'
+      --xunit robot-junit.xml
+      robot/tests
+  artifacts:
+    when: always
+    paths: [reports/robot/]
+    reports:
+      junit: reports/robot/robot-junit.xml

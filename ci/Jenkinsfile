@@ -1,0 +1,91 @@
+// Jenkins declarative pipeline for parabank-qa-automation.
+// Agent needs: Docker (with compose), Python 3.11, Node 20, Chrome.
+// Plugins: JUnit, Robot Framework, Timestamper.
+pipeline {
+  agent any
+
+  environment {
+    PARABANK_URL = 'http://localhost:8080/parabank'
+  }
+
+  options {
+    timestamps()
+    timeout(time: 40, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  triggers {
+    cron('H 18 * * *')   // nightly regression, around 02:00 Manila time
+  }
+
+  stages {
+    stage('Setup') {
+      steps {
+        sh 'docker compose up -d'
+        sh 'python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt'
+        sh 'npm install --no-save newman newman-reporter-htmlextra'
+        sh '. .venv/bin/activate && python scripts/wait_for_parabank.py --timeout 240'
+      }
+    }
+
+    stage('Lint') {
+      steps {
+        sh '. .venv/bin/activate && ruff check .'
+      }
+    }
+
+    stage('API tests (Newman)') {
+      steps {
+        sh '''
+          npx newman run postman/ParaBank.postman_collection.json \
+            -e postman/local.postman_environment.json \
+            -r cli,htmlextra,junit \
+            --reporter-htmlextra-export reports/newman-report.html \
+            --reporter-junit-export reports/newman-junit.xml
+        '''
+        sh '''
+          npx newman run postman/ParaBank.postman_collection.json \
+            -e postman/local.postman_environment.json \
+            --folder "01 Auth" --folder "03 Accounts" --folder "04 Transfer flow" \
+            -d postman/transfer-data.csv -r cli
+        '''
+      }
+    }
+
+    // UI suites run one after another: they share one ParaBank database,
+    // and parallel transfers would break each other's balance assertions.
+    stage('UI tests (pytest + Selenium)') {
+      steps {
+        sh '''
+          . .venv/bin/activate
+          python scripts/wait_for_parabank.py
+          python -m pytest --browser chrome --headless \
+            --junitxml=reports/pytest-junit.xml \
+            --html=reports/pytest.html --self-contained-html
+        '''
+      }
+    }
+
+    stage('Robot Framework') {
+      steps {
+        sh '''
+          . .venv/bin/activate
+          python scripts/wait_for_parabank.py
+          robot --outputdir reports/robot \
+            --variable BROWSER:headlesschrome \
+            --variable BASE_URL:${PARABANK_URL} \
+            robot/tests
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      junit allowEmptyResults: true, testResults: 'reports/*-junit.xml'
+      robot outputPath: 'reports/robot', passThreshold: 100.0, unstableThreshold: 90.0
+      archiveArtifacts artifacts: 'reports/**', allowEmptyArchive: true
+      sh 'docker compose down'
+    }
+  }
+}

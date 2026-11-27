@@ -28,8 +28,8 @@ variables:
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends chromium chromium-driver
     - pip install -r requirements.txt
-    # Fresh service container = default data, so no reset is needed.
-    - python scripts/wait_for_parabank.py --timeout 240 --no-reset
+    # A fresh service container has an empty database, so the script initialises it.
+    - python scripts/wait_for_parabank.py --timeout 300
 
 lint:
   stage: lint
@@ -44,12 +44,14 @@ api_tests:
   image: node:20
   script:
     - npm install -g newman newman-reporter-htmlextra
-    # Wait until ParaBank answers (up to 4 minutes).
+    # Wait for the web server (up to 5 minutes), then create the demo data:
+    # a fresh ParaBank container has an empty database until /initializeDB runs.
     - |
-      for i in $(seq 1 48); do
-        curl -sf "$PARABANK_URL/services/bank/customers/12212" -o /dev/null && break
+      for i in $(seq 1 60); do
+        curl -sf "$PARABANK_URL/index.htm" -o /dev/null && break
         echo "Waiting for ParaBank... ($i)"; sleep 5
       done
+    - curl -sf -X POST "$PARABANK_URL/services/bank/initializeDB"
     - >
       newman run postman/ParaBank.postman_collection.json
       -e postman/local.postman_environment.json

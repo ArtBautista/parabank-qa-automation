@@ -8,5 +8,6 @@ USERNAME = os.environ.get("PARABANK_USER", "john")
 PASSWORD = os.environ.get("PARABANK_PASS", "demo")
 TIMEOUT = float(os.environ.get("TIMEOUT", "15"))
 
-# Resetting the database is only safe on your own local container, never on the public site.
-IS_LOCAL = urlparse(BASE_URL).hostname in ("localhost", "127.0.0.1")
+# Resetting the database is only safe on your own container (localhost, or the "parabank"
+# service name in Docker-based CI), never on the public Parasoft site.
+IS_LOCAL = urlparse(BASE_URL).hostname in ("localhost", "127.0.0.1", "parabank")

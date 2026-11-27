@@ -1,0 +1,137 @@
+name: QA Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 18 * * *"  # 02:00 Manila time, nightly regression
+  workflow_dispatch:
+
+concurrency:
+  group: qa-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  PARABANK_URL: http://localhost:8080/parabank
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install ruff
+      - run: ruff check .
+
+  api-tests:
+    name: API tests (Postman + Newman)
+    needs: lint
+    runs-on: ubuntu-latest
+    services:
+      parabank:
+        image: parasoft/parabank:latest
+        ports:
+          - 8080:8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install requests
+      - run: npm install -g newman newman-reporter-htmlextra
+      - name: Wait for ParaBank and reset data
+        run: python scripts/wait_for_parabank.py --timeout 240
+      - name: Run Postman collection
+        run: >
+          newman run postman/ParaBank.postman_collection.json
+          -e postman/local.postman_environment.json
+          -r cli,htmlextra,junit
+          --reporter-htmlextra-export reports/newman-report.html
+          --reporter-junit-export reports/newman-junit.xml
+      - name: Run data-driven transfer folder
+        run: >
+          newman run postman/ParaBank.postman_collection.json
+          -e postman/local.postman_environment.json
+          --folder "01 Auth" --folder "03 Accounts" --folder "04 Transfer flow"
+          -d postman/transfer-data.csv -r cli
+      - name: Upload Newman report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newman-report
+          path: reports/
+
+  ui-tests:
+    name: UI tests (${{ matrix.browser }})
+    needs: api-tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, firefox]
+    services:
+      parabank:
+        image: parasoft/parabank:latest
+        ports:
+          - 8080:8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Wait for ParaBank and reset data
+        run: python scripts/wait_for_parabank.py --timeout 240
+      - name: Run Selenium page-object tests
+        run: >
+          python -m pytest --browser ${{ matrix.browser }} --headless
+          --junitxml=reports/pytest-${{ matrix.browser }}-junit.xml
+          --html=reports/pytest-${{ matrix.browser }}.html --self-contained-html
+      - name: Upload pytest report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report-${{ matrix.browser }}
+          path: reports/
+
+  robot-tests:
+    name: Robot Framework tests
+    needs: api-tests
+    runs-on: ubuntu-latest
+    services:
+      parabank:
+        image: parasoft/parabank:latest
+        ports:
+          - 8080:8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Wait for ParaBank and reset data
+        run: python scripts/wait_for_parabank.py --timeout 240
+      - name: Run Robot Framework suites
+        run: >
+          robot --outputdir reports/robot
+          --variable BROWSER:headlesschrome
+          --variable BASE_URL:${{ env.PARABANK_URL }}
+          robot/tests
+      - name: Upload Robot report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robot-report
+          path: reports/robot/
